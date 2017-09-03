@@ -32,6 +32,7 @@
         uninstgs.exe"
       />
     </copy>
+    <copy file="${bundle.tmp.prep.path}/${bundle.folder}/bin/gswin32c.exe" tofile="${bundle.tmp.prep.path}/${bundle.folder}/bin/gs.exe" overwrite="true"/>
     <copy todir="${bundle.tmp.prep.path}/${bundle.folder}" overwrite="true">
       <fileset dir="${bundle.path}" defaultexcludes="yes"/>
     </copy>
