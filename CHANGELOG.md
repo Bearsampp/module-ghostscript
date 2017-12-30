@@ -1,5 +1,9 @@
 # Changelog
 
+## r3 (2017/09/03)
+
+* New release : 9.22 (Issue neard/neard#350)
+
 ## r2 (2017/09/03)
 
 * Ghostscript exe not found by ImageMagick (Issue neard/neard#319)
