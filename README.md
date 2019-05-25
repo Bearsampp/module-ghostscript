@@ -5,7 +5,7 @@ This is a module of [Neard project](https://github.com/neard/neard) involving Gh
 
 ## Documentation and downloads
 
-http://neard.io/modules/ghostscript
+https://neard.io/modules/ghostscript
 
 ## Issues
 
