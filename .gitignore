@@ -3,3 +3,10 @@
 
 # Neard
 /.dev
+/.idea/.gitignore
+/.idea/deployment.xml
+/.idea/discord.xml
+/.idea/module-ghostscript.iml
+/.idea/modules.xml
+/.idea/php.xml
+/.idea/vcs.xml
