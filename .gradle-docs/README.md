@@ -15,6 +15,11 @@ This directory contains complete documentation for the Gradle build system.
 
 ### Source Management
 - **[SOURCE_DOWNLOAD_BEHAVIOR.md](SOURCE_DOWNLOAD_BEHAVIOR.md)** - How the build finds and downloads source files (modules-untouched, releases.properties, etc.)
+- **[REMOTE_PROPERTIES_FEATURE.md](REMOTE_PROPERTIES_FEATURE.md)** - Remote properties support for downloading from modules-untouched
+
+### Bug Fixes & Testing
+- **[BUGFIX_SUMMARY.md](BUGFIX_SUMMARY.md)** - Summary of bug fixes and improvements
+- **[TEST_MISSING_VERSION.md](TEST_MISSING_VERSION.md)** - Testing documentation for version fallback behavior
 
 ### Migration & Conversion
 - **[MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)** - Step-by-step guide for migrating from Ant to Gradle
@@ -67,6 +72,9 @@ gradle validateProperties                  # Validate configuration
 ├── GRADLE_BUILD.md                    # Complete build docs
 ├── GRADLE_SETUP.md                    # Setup guide
 ├── SOURCE_DOWNLOAD_BEHAVIOR.md        # Source management
+├── REMOTE_PROPERTIES_FEATURE.md       # Remote properties support
+├── BUGFIX_SUMMARY.md                  # Bug fixes and improvements
+├── TEST_MISSING_VERSION.md            # Testing documentation
 ├── MIGRATION_GUIDE.md                 # Ant to Gradle migration
 ├── ANT_TO_GRADLE_MAPPING.md          # Task mapping
 └── GRADLE_CONVERSION_SUMMARY.md      # Conversion summary

@@ -29,6 +29,9 @@ Complete documentation is available in the `.gradle-docs/` directory:
 - **[GRADLE_BUILD.md](.gradle-docs/GRADLE_BUILD.md)** - Complete build documentation
 - **[GRADLE_SETUP.md](.gradle-docs/GRADLE_SETUP.md)** - Installation and setup guide
 - **[SOURCE_DOWNLOAD_BEHAVIOR.md](.gradle-docs/SOURCE_DOWNLOAD_BEHAVIOR.md)** - How source files are downloaded
+- **[REMOTE_PROPERTIES_FEATURE.md](.gradle-docs/REMOTE_PROPERTIES_FEATURE.md)** - Remote properties support
+- **[BUGFIX_SUMMARY.md](.gradle-docs/BUGFIX_SUMMARY.md)** - Bug fixes and improvements
+- **[TEST_MISSING_VERSION.md](.gradle-docs/TEST_MISSING_VERSION.md)** - Testing documentation
 - **[MIGRATION_GUIDE.md](.gradle-docs/MIGRATION_GUIDE.md)** - Migrating from Ant to Gradle
 - **[ANT_TO_GRADLE_MAPPING.md](.gradle-docs/ANT_TO_GRADLE_MAPPING.md)** - Task mapping reference
 - **[GRADLE_CONVERSION_SUMMARY.md](.gradle-docs/GRADLE_CONVERSION_SUMMARY.md)** - Conversion summary
