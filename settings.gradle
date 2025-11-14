@@ -4,9 +4,6 @@
 
 rootProject.name = 'module-ghostscript'
 
-// Enable Gradle features for better performance
-enableFeaturePreview('STABLE_CONFIGURATION_CACHE')
-
 // Configure build cache for faster builds
 buildCache {
     local {

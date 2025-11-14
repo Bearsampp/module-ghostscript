@@ -20,3 +20,14 @@ build/
 
 # Qodo
 /.qodo
+
+# Gradle
+.gradle/
+build/
+gradle-app.setting
+*.class
+
+# Temporary files
+bruno-build.gradle
+bruno-settings.gradle
+bruno-gradlew.bat
