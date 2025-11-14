@@ -1,12 +1,14 @@
 # Bearsampp Module Ghostscript - Gradle Build
 
-This project has been converted from Ant to Gradle build system. The Gradle build provides all the functionality of the original Ant build with additional features and improvements.
+This project uses a pure Gradle build system. The Gradle build provides all the functionality of the original Ant build with additional features and improvements.
 
 ## Prerequisites
 
-- Java 8 or higher
-- Gradle 8.5 or higher (must be installed on your system)
-- 7-Zip (for creating .7z archives)
+| Requirement          | Version      | Description                              |
+|----------------------|--------------|------------------------------------------|
+| Java                 | 8 or higher  | Required for Gradle execution            |
+| Gradle               | 8.5+         | Must be installed on your system         |
+| 7-Zip                | Latest       | Required for .7z archive creation        |
 
 ## Quick Start
 
@@ -67,10 +69,11 @@ bundle.format = 7z
 
 ### Build Path Priority
 
-The build output path is determined in this order:
-1. `build.path` property in build.properties
-2. `BEARSAMPP_BUILD_PATH` environment variable
-3. Default: `../bearsampp-build`
+| Priority | Source                                  | Description                          |
+|----------|-----------------------------------------|--------------------------------------|
+| 1        | `build.path` in build.properties        | Explicit path in config file         |
+| 2        | `BEARSAMPP_BUILD_PATH` env variable     | Environment variable override        |
+| 3        | `../bearsampp-build`                    | Default relative path                |
 
 ## Features
 
@@ -78,20 +81,22 @@ The build output path is determined in this order:
 
 All Ant build tasks have been converted to Gradle:
 
-| Ant Task | Gradle Equivalent | Description |
-|----------|-------------------|-------------|
-| `ant release.build` | `gradle release -PbundleVersion=X.X.X` | Build specific version |
-| N/A | `gradle releaseAll` | Build all versions |
-| N/A | `gradle clean` | Clean artifacts |
+| Ant Task                                                 | Gradle Equivalent                           | Description                    |
+|----------------------------------------------------------|---------------------------------------------|--------------------------------|
+| `ant release.build -Dbundle.path=bin/ghostscript10.05.1` | `gradle release -PbundleVersion=10.05.1`    | Build specific version         |
+| N/A                                                      | `gradle releaseAll`                         | Build all versions             |
+| `ant clean`                                              | `gradle clean`                              | Clean build artifacts          |
 
 ### Additional Features
 
-1. **Interactive Mode**: Run `gradle release` without parameters to interactively select a version
-2. **Archived Folder Support**: Automatically detects versions in both `bin/` and `bin/archived/`
-3. **Download Support**: Automatically downloads missing binaries from releases.properties
-4. **Hash Generation**: Generates MD5, SHA1, SHA256, and SHA512 hash files
-5. **Build Cache**: Faster incremental builds with Gradle's build cache
-6. **Better Error Messages**: Clear error messages with suggestions
+| Feature                    | Description                                                      |
+|----------------------------|------------------------------------------------------------------|
+| Interactive Mode           | Run `gradle release` to select version from menu                 |
+| Archived Folder Support    | Detects versions in both `bin/` and `bin/archived/`             |
+| Download Support           | Automatically downloads missing binaries                         |
+| Hash Generation            | Generates MD5, SHA1, SHA256, SHA512 hash files                   |
+| Build Cache                | Faster incremental builds with Gradle's build cache              |
+| Better Error Messages      | Clear error messages with actionable suggestions                 |
 
 ### Build Process
 
@@ -212,12 +217,16 @@ Install Gradle from https://gradle.org/install/
 
 The Gradle build is a complete replacement for the Ant build. Key differences:
 
-1. **No External Dependencies**: Gradle build is self-contained
-2. **Better Performance**: Gradle's incremental builds are faster
-3. **More Features**: Interactive mode, automatic downloads, better error messages
-4. **Same Output**: Produces identical archives as Ant build
+| Aspect                  | Ant Build                    | Gradle Build                              |
+|-------------------------|------------------------------|-------------------------------------------|
+| External Dependencies   | Requires build-commons.xml   | Self-contained                            |
+| Performance             | Standard                     | Faster with incremental builds            |
+| Interactive Mode        | Not available                | Available                                 |
+| Automatic Downloads     | Manual                       | Automatic                                 |
+| Error Messages          | Basic                        | Clear and actionable                      |
+| Output                  | Standard archives            | Identical archives + hash files           |
 
-You can safely remove `build.xml` after verifying the Gradle build works correctly.
+The Ant build file (`build.xml`) has been removed as Gradle is now the standard build system.
 
 ## Contributing
 

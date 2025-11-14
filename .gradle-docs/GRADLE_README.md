@@ -39,15 +39,22 @@ gradle tasks
 
 ## 📚 Documentation
 
-- **[GRADLE_BUILD.md](GRADLE_BUILD.md)** - Complete build documentation
-- **[MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)** - Ant to Gradle migration guide
-- **[ANT_TO_GRADLE_MAPPING.md](ANT_TO_GRADLE_MAPPING.md)** - Task mapping reference
-- **[GRADLE_CONVERSION_SUMMARY.md](GRADLE_CONVERSION_SUMMARY.md)** - Conversion summary
+| Document                                                                      | Description                      |
+|-------------------------------------------------------------------------------|----------------------------------|
+| [GRADLE_BUILD.md](GRADLE_BUILD.md)                                           | Complete build documentation     |
+| [GRADLE_SETUP.md](GRADLE_SETUP.md)                                           | Installation and setup guide     |
+| [SOURCE_DOWNLOAD_BEHAVIOR.md](SOURCE_DOWNLOAD_BEHAVIOR.md)                   | Source download flow             |
+| [REMOTE_PROPERTIES_FEATURE.md](REMOTE_PROPERTIES_FEATURE.md)                 | Remote properties support        |
+| [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)                                     | Migration from Ant to Gradle     |
+| [ANT_TO_GRADLE_MAPPING.md](ANT_TO_GRADLE_MAPPING.md)                         | Task mapping reference           |
+| [GRADLE_CONVERSION_SUMMARY.md](GRADLE_CONVERSION_SUMMARY.md)                 | Conversion summary               |
+| [BUGFIX_SUMMARY.md](BUGFIX_SUMMARY.md)                                       | Bug fixes and improvements       |
+| [TEST_MISSING_VERSION.md](TEST_MISSING_VERSION.md)                           | Testing documentation            |
 
 ## ✨ Key Features
 
 ### From Ant Build
-- ✅ All Ant functionality preserved
+- ✅ Functionality preserved from Ant
 - ✅ Same output structure
 - ✅ Compatible with existing workflows
 - ✅ Uses same configuration files
@@ -64,12 +71,12 @@ gradle tasks
 
 ## 🔄 Command Comparison
 
-| Ant | Gradle |
-|-----|--------|
-| `ant release.build -Dbundle.path=bin/ghostscript10.05.1` | `gradle release -PbundleVersion=10.05.1` |
-| N/A | `gradle release` (interactive) |
-| N/A | `gradle releaseAll` |
-| `ant clean` | `gradle clean` |
+| Ant Command                                              | Gradle Command                              | Description                    |
+|----------------------------------------------------------|---------------------------------------------|--------------------------------|
+| `ant release.build -Dbundle.path=bin/ghostscript10.05.1` | `gradle release -PbundleVersion=10.05.1`    | Build specific version         |
+| N/A                                                      | `gradle release`                            | Interactive mode               |
+| N/A                                                      | `gradle releaseAll`                         | Build all versions             |
+| `ant clean`                                              | `gradle clean`                              | Clean build artifacts          |
 
 ## 📁 Project Structure
 
@@ -88,17 +95,20 @@ module-ghostscript/
 
 ### build.properties
 ```properties
-bundle.name = ghostscript
+bundle.name    = ghostscript
 bundle.release = 2025.7.31
-bundle.type = tools
-bundle.format = 7z
-#build.path = C:/Bearsampp-build
+bundle.type    = tools
+bundle.format  = 7z
+#build.path    = C:/Bearsampp-build
 ```
 
 ### Build Path Priority
-1. `build.path` in build.properties
-2. `BEARSAMPP_BUILD_PATH` environment variable
-3. Default: `../bearsampp-build`
+
+| Priority | Source                                  | Description                          |
+|----------|-----------------------------------------|--------------------------------------|
+| 1        | `build.path` in build.properties        | Explicit path in config file         |
+| 2        | `BEARSAMPP_BUILD_PATH` env variable     | Environment variable override        |
+| 3        | `../bearsampp-build`                    | Default relative path                |
 
 ## 📦 Output Structure
 
@@ -248,20 +258,21 @@ gradle verify && gradle release -PbundleVersion=10.05.1
 
 ## 🔗 Related Files
 
-- `build.gradle` - Main build script
-- `settings.gradle` - Gradle settings
-- `build.properties` - Bundle configuration
-- `releases.properties` - Download URLs
-- `build.xml` - Original Ant build (preserved)
+| File                   | Description                              |
+|------------------------|------------------------------------------|
+| `build.gradle`         | Main Gradle build script                 |
+| `settings.gradle`      | Gradle project settings                  |
+| `build.properties`     | Bundle configuration                     |
+| `releases.properties`  | Download URLs for versions               |
 
 ## 📝 Notes
 
-- The Gradle build is a complete replacement for Ant
-- All Ant functionality is preserved
-- Additional features have been added
-- The original `build.xml` is preserved for reference
-- Output is identical to Ant builds
-- Requires Gradle 8.5+ to be installed on your system
+- Pure Gradle build (Ant removed)
+- All Ant functionality preserved
+- Additional features added
+- Output identical to previous Ant builds
+- Requires Gradle 8.5+ installed on your system
+- No Gradle wrapper used
 
 ## 🆘 Support
 
