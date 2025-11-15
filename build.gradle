@@ -77,24 +77,48 @@ repositories {
 // HELPER FUNCTIONS
 // ============================================================================
 
+// Function to fetch modules-untouched properties file
+def fetchModulesUntouchedProperties() {
+    def propertiesUrl = "https://raw.githubusercontent.com/Bearsampp/modules-untouched/main/modules/${bundleName}.properties"
+
+    try {
+        def tempPropsFile = file("${buildTmpPath}/tmp-${bundleName}.properties")
+        tempPropsFile.parentFile.mkdirs()
+
+        ant.get(src: propertiesUrl, dest: tempPropsFile, verbose: false, ignoreerrors: true)
+
+        if (tempPropsFile.exists() && tempPropsFile.length() > 0) {
+            def props = new Properties()
+            tempPropsFile.withInputStream { props.load(it) }
+            tempPropsFile.delete()
+            return props
+        }
+    } catch (Exception e) {
+        // Silently fail
+    }
+
+    return null
+}
+
 // Function to get untouched module from modules-untouched repo (like Ant's getmoduleuntouched)
 def getModuleUntouched(String name, String version) {
     // First, check if modules-untouched repo exists locally
     def modulesUntouchedPath = file("${rootDir}/modules-untouched")
-    
+
     if (modulesUntouchedPath.exists()) {
         // Look for the module in modules-untouched repo
         def untouchedModulePath = file("${modulesUntouchedPath}/${name}/${name}${version}")
-        
+
         if (untouchedModulePath.exists()) {
-            def ghostscriptExe = file("${untouchedModulePath}/bin/gswin64c.exe")
-            if (ghostscriptExe.exists()) {
+            def ghostscriptExe64 = file("${untouchedModulePath}/bin/gswin64c.exe")
+            def ghostscriptExe32 = file("${untouchedModulePath}/bin/gswin32c.exe")
+            if (ghostscriptExe64.exists() || ghostscriptExe32.exists()) {
                 println "Found untouched module in local repository: ${untouchedModulePath}"
                 return untouchedModulePath
             }
         }
     }
-    
+
     // Second, try to download from modules-untouched remote properties file
     println "Module not found in local modules-untouched, checking remote properties..."
     def remoteUrl = getModuleUntouchedRemoteUrl(name, version)
@@ -102,30 +126,30 @@ def getModuleUntouched(String name, String version) {
         println "Found module in remote modules-untouched properties"
         return downloadAndExtractFromUrl(remoteUrl, version, name)
     }
-    
+
     return null
 }
 
 // Function to get download URL from modules-untouched remote properties file
 def getModuleUntouchedRemoteUrl(String name, String version) {
     def propertiesUrl = "https://raw.githubusercontent.com/Bearsampp/modules-untouched/main/modules/${name}.properties"
-    
+
     try {
         println "  Checking: ${propertiesUrl}"
-        
+
         // Download the properties file (store alongside other downloads like Bruno)
         def tempPropsFile = file("${bundleTmpDownloadPath}/${name}-untouched.properties")
         tempPropsFile.parentFile.mkdirs()
-        
+
         ant.get(src: propertiesUrl, dest: tempPropsFile, verbose: false, ignoreerrors: true)
-        
+
         if (tempPropsFile.exists() && tempPropsFile.length() > 0) {
             def props = new Properties()
             tempPropsFile.withInputStream { props.load(it) }
-            
+
             def url = props.getProperty(version)
             tempPropsFile.delete()
-            
+
             if (url) {
                 println "  Found version ${version} in remote properties"
                 return url
@@ -138,23 +162,23 @@ def getModuleUntouchedRemoteUrl(String name, String version) {
     } catch (Exception e) {
         println "  Could not access remote properties: ${e.message}"
     }
-    
+
     return null
 }
 
 // Function to download and extract from a URL
 def downloadAndExtractFromUrl(String downloadUrl, String version, String name) {
     println "  Downloading from: ${downloadUrl}"
-    
+
     // Determine filename from URL
     def filename = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1)
     def downloadDir = file(bundleTmpDownloadPath)
     def extractDir = file(bundleTmpExtractPath)
     downloadDir.mkdirs()
     extractDir.mkdirs()
-    
+
     def downloadedFile = file("${downloadDir}/${filename}")
-    
+
     // Download if not already present
     if (!downloadedFile.exists()) {
         println "  Downloading to: ${downloadedFile}"
@@ -163,7 +187,7 @@ def downloadAndExtractFromUrl(String downloadUrl, String version, String name) {
     } else {
         println "  Using cached file: ${downloadedFile}"
     }
-    
+
     // Extract the archive
     println "  Extracting archive..."
     def extractPath = file("${extractDir}/${version}")
@@ -171,7 +195,7 @@ def downloadAndExtractFromUrl(String downloadUrl, String version, String name) {
         delete extractPath
     }
     extractPath.mkdirs()
-    
+
     // Use 7zip or built-in extraction
     if (filename.endsWith('.7z')) {
         def sevenZipPath = find7ZipExecutable()
@@ -187,11 +211,11 @@ def downloadAndExtractFromUrl(String downloadUrl, String version, String name) {
                 .directory(extractPath)
                 .redirectErrorStream(true)
                 .start()
-            
+
             process.inputStream.eachLine { line ->
                 if (line.trim()) println "    ${line}"
             }
-            
+
             def exitCode = process.waitFor()
             if (exitCode != 0) {
                 throw new GradleException("7zip extraction failed with exit code: ${exitCode}")
@@ -207,15 +231,15 @@ def downloadAndExtractFromUrl(String downloadUrl, String version, String name) {
     } else {
         throw new GradleException("Unsupported archive format: ${filename}")
     }
-    
+
     println "  Extraction complete"
-    
+
     // Find the module directory in the extracted files
     def moduleDir = findGhostscriptDirectory(extractPath)
     if (!moduleDir) {
         throw new GradleException("Could not find ${name} directory in extracted files")
     }
-    
+
     println "  Found ${name} directory: ${moduleDir.name}"
     return moduleDir
 }
@@ -229,11 +253,11 @@ def downloadAndExtractGhostscript(String version, File destDir) {
         println "Using untouched module from modules-untouched repository"
         return untouchedModule
     }
-    
+
     // Second, try to download from releases.properties
     println "Module not found in modules-untouched, downloading from releases.properties..."
     println ""
-    
+
     def releasesFile = file('releases.properties')
     if (!releasesFile.exists()) {
         throw new GradleException("releases.properties not found")
@@ -329,14 +353,14 @@ def downloadAndExtractGhostscript(String version, File destDir) {
 def findGhostscriptDirectory(File extractPath) {
     // Check for both 64-bit and 32-bit executables
     def exeNames = ['gswin64c.exe', 'gswin32c.exe']
-    
+
     // First check if extractPath itself contains the executable (direct extraction)
     for (exeName in exeNames) {
         if (file("${extractPath}/bin/${exeName}").exists()) {
             return extractPath
         }
     }
-    
+
     // Look for directory containing the executable at top level
     def ghostscriptDirs = extractPath.listFiles()?.findAll { dir ->
         if (!dir.isDirectory()) return false
@@ -589,7 +613,7 @@ tasks.register('release') {
         def ghostscriptExe64 = bundleSrcFinal ? file("${bundleSrcFinal}/bin/gswin64c.exe") : file('NUL')
         def ghostscriptExe32 = bundleSrcFinal ? file("${bundleSrcFinal}/bin/gswin32c.exe") : file('NUL')
         def hasGhostscript = bundleSrcFinal && (ghostscriptExe64.exists() || ghostscriptExe32.exists())
-        
+
         if (!hasGhostscript) {
             // Ghostscript binaries not found in bin/ - check if already downloaded to bearsampp-build/tmp
             def tmpExtractPath = file("${bundleTmpExtractPath}/${bundleVersion}")
@@ -625,7 +649,7 @@ tasks.register('release') {
         ghostscriptExe64 = file("${bundleSrcFinal}/bin/gswin64c.exe")
         ghostscriptExe32 = file("${bundleSrcFinal}/bin/gswin32c.exe")
         def ghostscriptExe = ghostscriptExe64.exists() ? ghostscriptExe64 : ghostscriptExe32
-        
+
         if (!ghostscriptExe.exists()) {
             throw new GradleException("Ghostscript executable (gswin64c.exe or gswin32c.exe) not found in ${bundleSrcFinal}/bin/")
         }
@@ -652,8 +676,8 @@ tasks.register('release') {
         }
 
         // Copy gswin64c.exe or gswin32c.exe to gs.exe
-        def sourceExe = file("${ghostscriptPrepPath}/bin/gswin64c.exe").exists() ? 
-                        file("${ghostscriptPrepPath}/bin/gswin64c.exe") : 
+        def sourceExe = file("${ghostscriptPrepPath}/bin/gswin64c.exe").exists() ?
+                        file("${ghostscriptPrepPath}/bin/gswin64c.exe") :
                         file("${ghostscriptPrepPath}/bin/gswin32c.exe")
         println "Creating gs.exe from ${sourceExe.name}..."
         copy {
@@ -771,7 +795,7 @@ tasks.register('release') {
         println ""
         println "=".multiply(70)
         println "[SUCCESS] Release build completed successfully for version ${versionToBuild}"
-        println "Output directory: ${buildBinsPath}"
+        println "Output directory: ${ghostscriptBuildPath}"
         println "Archive: ${destFile}.${bundleFormat}"
         println "=".multiply(70)
     }
@@ -1060,7 +1084,7 @@ tasks.register('releaseAll') {
 
                 println ""
                 println "[SUCCESS] ${bundleName} ${version} completed"
-                println "Output: ${buildBinsPath}"
+                println "Output: ${ghostscriptBuildPath}"
                 successCount++
 
             } catch (Exception e) {
@@ -1167,28 +1191,43 @@ tasks.register('verify') {
     }
 }
 
-// Task: List all bundle versions from releases.properties
+// Task: List all bundle versions from modules-untouched ghostscript.properties
 tasks.register('listReleases') {
     group = 'help'
-    description = 'List all available releases from releases.properties'
+    description = 'List all available releases from modules-untouched ghostscript.properties'
 
     doLast {
-        def releasesFile = file('releases.properties')
-        if (!releasesFile.exists()) {
-            println "releases.properties not found"
+        def props = fetchModulesUntouchedProperties()
+        if (!props) {
+            println "\n[WARNING] Could not fetch modules-untouched ghostscript.properties."
+            println "Checking local releases.properties..."
+
+            def releasesFile = file('releases.properties')
+            if (!releasesFile.exists()) {
+                println "releases.properties not found"
+                return
+            }
+
+            def releases = new Properties()
+            releasesFile.withInputStream { releases.load(it) }
+
+            println "\nAvailable Ghostscript Releases (local):"
+            println "-".multiply(80)
+            releases.sort { it.key }.each { version, url ->
+                println "  ${version.padRight(10)} -> ${url}"
+            }
+            println "-".multiply(80)
+            println "Total releases: ${releases.size()}"
             return
         }
 
-        def releases = new Properties()
-        releasesFile.withInputStream { releases.load(it) }
-
-        println "\nAvailable Ghostscript Releases:"
+        println "\nAvailable Ghostscript Releases (modules-untouched):"
         println "-".multiply(80)
-        releases.sort { it.key }.each { version, url ->
+        props.sort { a, b -> a.key <=> b.key }.each { version, url ->
             println "  ${version.padRight(10)} -> ${url}"
         }
         println "-".multiply(80)
-        println "Total releases: ${releases.size()}"
+        println "Total releases: ${props.size()}"
     }
 }
 
@@ -1259,6 +1298,81 @@ tasks.register('validateProperties') {
                 println "    - ${prop}"
             }
             throw new GradleException("build.properties validation failed")
+        }
+    }
+}
+
+// Task: Check modules-untouched integration
+tasks.register('checkModulesUntouched') {
+    group = 'verification'
+    description = 'Check modules-untouched repository integration and available versions'
+
+    doLast {
+        println ""
+        println "=".multiply(70)
+        println "Modules-Untouched Integration Check"
+        println "=".multiply(70)
+        println ""
+
+        def propsUrl = "https://raw.githubusercontent.com/Bearsampp/modules-untouched/main/modules/${bundleName}.properties"
+        println "Repository URL:"
+        println "  ${propsUrl}"
+        println ""
+
+        println "Fetching ${bundleName}.properties from modules-untouched..."
+        def untouchedProps = fetchModulesUntouchedProperties()
+
+        if (untouchedProps) {
+            println ""
+            println "=".multiply(70)
+            println "Available Versions in modules-untouched"
+            println "=".multiply(70)
+
+            def sortedVersions = untouchedProps.sort { a, b ->
+                // Simple version comparison
+                def aParts = a.key.tokenize('.')
+                def bParts = b.key.tokenize('.')
+                for (int i = 0; i < Math.min(aParts.size(), bParts.size()); i++) {
+                    def aNum = aParts[i].toInteger()
+                    def bNum = bParts[i].toInteger()
+                    if (aNum != bNum) return aNum <=> bNum
+                }
+                return aParts.size() <=> bParts.size()
+            }
+
+            sortedVersions.each { version, url ->
+                println "  ${version.padRight(10)}"
+            }
+
+            println "=".multiply(70)
+            println "Total versions: ${untouchedProps.size()}"
+            println ""
+
+            println ""
+            println "=".multiply(70)
+            println "[SUCCESS] modules-untouched integration is working"
+            println "=".multiply(70)
+            println ""
+            println "Version Resolution Strategy:"
+            println "  1. Check modules-untouched ${bundleName}.properties (remote)"
+            println "  2. Check local releases.properties (fallback)"
+            println "  3. Construct standard URL format (fallback)"
+            println ""
+
+        } else {
+            println ""
+            println "=".multiply(70)
+            println "[WARNING] Could not fetch ${bundleName}.properties from modules-untouched"
+            println "=".multiply(70)
+            println ""
+            println "This may be due to:"
+            println "  - Network connectivity issues"
+            println "  - Repository access problems"
+            println "  - File not available at expected location"
+            println ""
+            println "The build system will fall back to:"
+            println "  1. Local releases.properties"
+            println "  2. Standard URL format construction"
         }
     }
 }
