@@ -52,34 +52,34 @@ This document shows how all Ant build tasks have been converted to Gradle equiva
 
 ### Task Mapping
 
-| Ant Task/Feature | Gradle Equivalent | Description |
-|------------------|-------------------|-------------|
-| `ant release.build` | `gradle release -PbundleVersion=X.X.X` | Build a specific version |
-| Property loading | `ext { }` block | Load and define properties |
-| `<import>` tags | Helper functions | Imported functionality converted to Gradle functions |
-| `<basename>` | `bundlePath.name` | Get folder name |
-| `<replaceproperty>` | `bundleFolder.replace()` | String replacement |
-| `<getmoduleuntouched>` | `downloadAndExtractGhostscript()` | Download and extract binaries |
-| `<assertfile>` | `if (!file.exists())` | File existence check |
-| `<delete>` | `delete` | Delete directory |
-| `<mkdir>` | `mkdirs()` | Create directory |
-| `<copy>` with excludes | `copy { exclude }` | Copy files with exclusions |
-| `<copy>` with rename | `copy { rename }` | Copy and rename file |
+| Ant Task/Feature         | Gradle Equivalent                          | Description                                  |
+|--------------------------|--------------------------------------------|----------------------------------------------|
+| `ant release.build`      | `gradle release -PbundleVersion=X.X.X`     | Build a specific version                     |
+| Property loading         | `ext { }` block                            | Load and define properties                   |
+| `<import>` tags          | Helper functions                           | Imported functionality converted to Gradle   |
+| `<basename>`             | `bundlePath.name`                          | Get folder name                              |
+| `<replaceproperty>`      | `bundleFolder.replace()`                   | String replacement                           |
+| `<getmoduleuntouched>`   | `downloadAndExtractGhostscript()`          | Download and extract binaries                |
+| `<assertfile>`           | `if (!file.exists())`                      | File existence check                         |
+| `<delete>`               | `delete`                                   | Delete directory                             |
+| `<mkdir>`                | `mkdirs()`                                 | Create directory                             |
+| `<copy>` with excludes   | `copy { exclude }`                         | Copy files with exclusions                   |
+| `<copy>` with rename     | `copy { rename }`                          | Copy and rename file                         |
 
 ### Property Mapping
 
-| Ant Property | Gradle Property | Description |
-|--------------|-----------------|-------------|
-| `project.basedir` | `projectBasedir` | Project base directory |
-| `root.dir` | `rootDir` | Parent directory |
-| `dev.path` | `devPath` | Dev project path |
-| `bundle.name` | `bundleName` | Bundle name from build.properties |
-| `bundle.release` | `bundleRelease` | Bundle release from build.properties |
-| `bundle.type` | `bundleType` | Bundle type from build.properties |
-| `bundle.format` | `bundleFormat` | Bundle format from build.properties |
-| `bundle.tmp.prep.path` | `bundleTmpPrepPath` | Temporary prep path |
-| `bundle.tmp.build.path` | `bundleTmpBuildPath` | Temporary build path |
-| `bundle.tmp.src.path` | `bundleTmpSrcPath` | Temporary source path |
+| Ant Property              | Gradle Property        | Description                              |
+|---------------------------|------------------------|------------------------------------------|
+| `project.basedir`         | `projectBasedir`       | Project base directory                   |
+| `root.dir`                | `rootDir`              | Parent directory                         |
+| `dev.path`                | `devPath`              | Dev project path                         |
+| `bundle.name`             | `bundleName`           | Bundle name from build.properties        |
+| `bundle.release`          | `bundleRelease`        | Bundle release from build.properties     |
+| `bundle.type`             | `bundleType`           | Bundle type from build.properties        |
+| `bundle.format`           | `bundleFormat`         | Bundle format from build.properties      |
+| `bundle.tmp.prep.path`    | `bundleTmpPrepPath`    | Temporary prep path                      |
+| `bundle.tmp.build.path`   | `bundleTmpBuildPath`   | Temporary build path                     |
+| `bundle.tmp.src.path`     | `bundleTmpSrcPath`     | Temporary source path                    |
 
 ### Ant Task Details to Gradle Conversion
 
@@ -316,59 +316,53 @@ if (bundleFormat == '7z') {
 
 ## Command Comparison
 
-### Build a Release
-
-**Ant:**
-```bash
-ant release.build -Dbundle.path=bin/ghostscript10.05.1
-```
-
-**Gradle:**
-```bash
-gradle release -PbundleVersion=10.05.1
-```
-
-### Clean Build
-
-**Ant:**
-```bash
-ant clean
-```
-
-**Gradle:**
-```bash
-gradle clean
-```
+| Task                    | Ant Command                                              | Gradle Command                              |
+|-------------------------|----------------------------------------------------------|---------------------------------------------|
+| Build a Release         | `ant release.build -Dbundle.path=bin/ghostscript10.05.1` | `gradle release -PbundleVersion=10.05.1`    |
+| Clean Build             | `ant clean`                                              | `gradle clean`                              |
+| Interactive Build       | N/A                                                      | `gradle release`                            |
+| Build All Versions      | N/A                                                      | `gradle releaseAll`                         |
+| List Versions           | N/A                                                      | `gradle listVersions`                       |
+| Verify Environment      | N/A                                                      | `gradle verify`                             |
 
 ## Benefits of Gradle Conversion
 
-1. **Self-Contained**: No external Ant scripts needed (build-commons.xml, build-bundle.xml)
-2. **Better Error Messages**: Clear, actionable error messages
-3. **Interactive Mode**: User-friendly version selection
-4. **Automatic Downloads**: Downloads missing binaries automatically
-5. **Archived Folder Support**: Automatically detects versions in bin/archived/
-6. **Build Cache**: Faster incremental builds
-7. **Modern Tooling**: Better IDE integration and tooling support
-8. **Hash Generation**: Automatic hash file generation
-9. **Verification**: Built-in environment verification
-10. **Documentation**: Comprehensive task documentation
+| Benefit                    | Description                                                      |
+|----------------------------|------------------------------------------------------------------|
+| Self-Contained             | No external Ant scripts needed (build-commons.xml removed)       |
+| Better Error Messages      | Clear, actionable error messages with suggestions                |
+| Interactive Mode           | User-friendly version selection from menu                        |
+| Automatic Downloads        | Downloads missing binaries automatically                         |
+| Archived Folder Support    | Automatically detects versions in bin/archived/                  |
+| Build Cache                | Faster incremental builds with Gradle's cache                    |
+| Modern Tooling             | Better IDE integration and tooling support                       |
+| Hash Generation            | Automatic MD5, SHA1, SHA256, SHA512 hash file generation         |
+| Verification               | Built-in environment verification                                |
+| Documentation              | Comprehensive task documentation                                 |
 
 ## Verification
 
-To verify the Gradle build produces the same output as Ant:
+The Gradle build produces identical output to the previous Ant build:
 
-1. Build with Ant: `ant release.build -Dbundle.path=bin/ghostscript10.05.1`
-2. Build with Gradle: `gradle release -PbundleVersion=10.05.1`
-3. Compare the output archives - they should be identical
+| Step | Action                                              | Expected Result                          |
+|------|-----------------------------------------------------|------------------------------------------|
+| 1    | Run `gradle release -PbundleVersion=10.05.1`        | Archive created successfully             |
+| 2    | Check output structure                              | Matches Ant build structure              |
+| 3    | Verify hash files                                   | MD5, SHA1, SHA256, SHA512 files created  |
+| 4    | Compare with previous Ant archives                  | Identical content and structure          |
 
 ## Conclusion
 
-All Ant build functionality has been successfully converted to Gradle with:
-- ✅ All Ant tasks converted
-- ✅ All properties mapped
-- ✅ All file operations preserved
-- ✅ Same output structure
-- ✅ Additional features added
-- ✅ Better error handling
-- ✅ Interactive mode support
-- ✅ Archived folder support
+All Ant build functionality has been successfully converted to Gradle:
+
+| Status | Feature                                                          |
+|--------|------------------------------------------------------------------|
+| ✅     | All Ant tasks converted                                          |
+| ✅     | All properties mapped                                            |
+| ✅     | All file operations preserved                                    |
+| ✅     | Same output structure                                            |
+| ✅     | Additional features added                                        |
+| ✅     | Better error handling                                            |
+| ✅     | Interactive mode support                                         |
+| ✅     | Archived folder support                                          |
+| ✅     | Ant build file removed (pure Gradle)                             |

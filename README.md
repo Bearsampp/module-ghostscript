@@ -7,7 +7,9 @@ This is a module of [Bearsampp project](https://github.com/bearsampp/bearsampp) 
 
 ## Documentation and downloads
 
-https://bearsampp.com/module/ghostscript
+- Project docs: /.gradle-docs
+- Build guide: /.gradle-docs/GRADLE_README.md
+- Downloads: https://bearsampp.com/module/ghostscript
 
 ## Issues
 

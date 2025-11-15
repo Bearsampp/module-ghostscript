@@ -1,6 +1,6 @@
 # Gradle Build System
 
-This project uses Gradle for building releases. The Ant build system is still available but the Gradle build is the recommended approach.
+This project uses a pure Gradle build for releases. The Ant build system has been removed.
 
 ## Quick Start
 
@@ -23,18 +23,18 @@ gradle releaseAll
 
 ## Documentation
 
-Complete documentation is available in the `.gradle-docs/` directory:
+All documentation is consolidated under the `/.gradle-docs` directory:
 
-- **[GRADLE_README.md](.gradle-docs/GRADLE_README.md)** - Quick reference guide
-- **[GRADLE_BUILD.md](.gradle-docs/GRADLE_BUILD.md)** - Complete build documentation
-- **[GRADLE_SETUP.md](.gradle-docs/GRADLE_SETUP.md)** - Installation and setup guide
-- **[SOURCE_DOWNLOAD_BEHAVIOR.md](.gradle-docs/SOURCE_DOWNLOAD_BEHAVIOR.md)** - How source files are downloaded
-- **[REMOTE_PROPERTIES_FEATURE.md](.gradle-docs/REMOTE_PROPERTIES_FEATURE.md)** - Remote properties support
-- **[BUGFIX_SUMMARY.md](.gradle-docs/BUGFIX_SUMMARY.md)** - Bug fixes and improvements
-- **[TEST_MISSING_VERSION.md](.gradle-docs/TEST_MISSING_VERSION.md)** - Testing documentation
-- **[MIGRATION_GUIDE.md](.gradle-docs/MIGRATION_GUIDE.md)** - Migrating from Ant to Gradle
-- **[ANT_TO_GRADLE_MAPPING.md](.gradle-docs/ANT_TO_GRADLE_MAPPING.md)** - Task mapping reference
-- **[GRADLE_CONVERSION_SUMMARY.md](.gradle-docs/GRADLE_CONVERSION_SUMMARY.md)** - Conversion summary
+- [GRADLE_README.md](/.gradle-docs/GRADLE_README.md) - Quick reference guide
+- [GRADLE_BUILD.md](/.gradle-docs/GRADLE_BUILD.md) - Complete build documentation
+- [GRADLE_SETUP.md](/.gradle-docs/GRADLE_SETUP.md) - Installation and setup guide
+- [SOURCE_DOWNLOAD_BEHAVIOR.md](/.gradle-docs/SOURCE_DOWNLOAD_BEHAVIOR.md) - Source download flow
+- [REMOTE_PROPERTIES_FEATURE.md](/.gradle-docs/REMOTE_PROPERTIES_FEATURE.md) - Remote properties support
+- [BUGFIX_SUMMARY.md](/.gradle-docs/BUGFIX_SUMMARY.md) - Bug fixes and improvements
+- [TEST_MISSING_VERSION.md](/.gradle-docs/TEST_MISSING_VERSION.md) - Testing documentation
+- [MIGRATION_GUIDE.md](/.gradle-docs/MIGRATION_GUIDE.md) - Migration from Ant to Gradle
+- [ANT_TO_GRADLE_MAPPING.md](/.gradle-docs/ANT_TO_GRADLE_MAPPING.md) - Task mapping reference
+- [GRADLE_CONVERSION_SUMMARY.md](/.gradle-docs/GRADLE_CONVERSION_SUMMARY.md) - Conversion summary
 
 ## Prerequisites
 
@@ -50,7 +50,7 @@ gradle verify
 ## Key Features
 
 ### From Ant Build
-- ✅ All Ant functionality preserved
+- ✅ Functionality preserved
 - ✅ Same output structure
 - ✅ Compatible with existing workflows
 - ✅ Uses same configuration files

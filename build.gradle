@@ -113,8 +113,8 @@ def getModuleUntouchedRemoteUrl(String name, String version) {
     try {
         println "  Checking: ${propertiesUrl}"
         
-        // Download the properties file
-        def tempPropsFile = file("${buildTmpPath}/tmp-${name}.properties")
+        // Download the properties file (store alongside other downloads like Bruno)
+        def tempPropsFile = file("${bundleTmpDownloadPath}/${name}-untouched.properties")
         tempPropsFile.parentFile.mkdirs()
         
         ant.get(src: propertiesUrl, dest: tempPropsFile, verbose: false, ignoreerrors: true)
@@ -498,7 +498,7 @@ tasks.register('release') {
                 println "  ${(index + 1).toString().padLeft(2)}. ${version.padRight(15)} ${location}"
             }
             println ""
-            println "Enter version number to build:"
+            println "Enter version to build (index or exact version):"
             println ""
 
             // Read input using Gradle's standard input
@@ -526,14 +526,30 @@ tasks.register('release') {
 
             versionToBuild = input.trim()
 
-            // Validate the entered version
-            if (!availableVersions.contains(versionToBuild)) {
-                throw new GradleException("""
-                    Invalid version: ${versionToBuild}
+            // Support selecting by list index (e.g., "9") or exact version string
+            def indexMatch = (versionToBuild ==~ /\d+/)
+            if (indexMatch) {
+                def idx = Integer.parseInt(versionToBuild)
+                if (idx >= 1 && idx <= availableVersions.size()) {
+                    versionToBuild = availableVersions[idx - 1]
+                } else {
+                    throw new GradleException("""
+                        Invalid selection: ${input}
 
-                    Please choose from available versions:
-                    ${availableVersions.collect { "  - ${it}" }.join('\n')}
-                """.stripIndent())
+                        Please enter a number between 1 and ${availableVersions.size()} or one of the exact versions below:
+                        ${availableVersions.collect { "  - ${it}" }.join('\n')}
+                    """.stripIndent())
+                }
+            } else {
+                // Validate the entered version string
+                if (!availableVersions.contains(versionToBuild)) {
+                    throw new GradleException("""
+                        Invalid version: ${versionToBuild}
+
+                        Please choose from available versions:
+                        ${availableVersions.collect { "  - ${it}" }.join('\n')}
+                    """.stripIndent())
+                }
             }
 
             println ""
@@ -546,30 +562,33 @@ tasks.register('release') {
         println "=".multiply(70)
         println ""
 
-        // Validate version exists - check both bin and bin/archived directories
+        // Try to use local bin first; if missing, we'll download (modules-untouched fallback)
         def bundlePath = file("${projectDir}/bin/${bundleName}${versionToBuild}")
         if (!bundlePath.exists()) {
-            bundlePath = file("${projectDir}/bin/archived/${bundleName}${versionToBuild}")
-            if (!bundlePath.exists()) {
-                throw new GradleException("Bundle version not found in bin/ or bin/archived/\n\nAvailable versions:\n${getAvailableVersions().collect { "  - ${it}" }.join('\n')}")
+            def archivedCandidate = file("${projectDir}/bin/archived/${bundleName}${versionToBuild}")
+            if (archivedCandidate.exists()) {
+                bundlePath = archivedCandidate
+            } else {
+                println "No local bundle found in bin/ or bin/archived/. Will download sources."
             }
         }
 
-        println "Bundle path: ${bundlePath}"
+        if (bundlePath?.exists()) {
+            println "Bundle path: ${bundlePath}"
+        }
         println ""
 
-        // Get the bundle folder and version
-        def bundleFolder = bundlePath.name
-        def bundleVersion = bundleFolder.replace(bundleName, '')
+        // Determine bundleVersion
+        def bundleVersion = bundlePath?.exists() ? bundlePath.name.replace(bundleName, '') : versionToBuild
 
         // Determine source paths
         def bundleSrcDest = bundlePath
         def bundleSrcFinal = bundleSrcDest
 
-        // Check if Ghostscript executable exists (64-bit or 32-bit)
-        def ghostscriptExe64 = file("${bundleSrcFinal}/bin/gswin64c.exe")
-        def ghostscriptExe32 = file("${bundleSrcFinal}/bin/gswin32c.exe")
-        def hasGhostscript = ghostscriptExe64.exists() || ghostscriptExe32.exists()
+        // Check if Ghostscript executable exists (64-bit or 32-bit) when we have a local bundle
+        def ghostscriptExe64 = bundleSrcFinal ? file("${bundleSrcFinal}/bin/gswin64c.exe") : file('NUL')
+        def ghostscriptExe32 = bundleSrcFinal ? file("${bundleSrcFinal}/bin/gswin32c.exe") : file('NUL')
+        def hasGhostscript = bundleSrcFinal && (ghostscriptExe64.exists() || ghostscriptExe32.exists())
         
         if (!hasGhostscript) {
             // Ghostscript binaries not found in bin/ - check if already downloaded to bearsampp-build/tmp
@@ -643,14 +662,33 @@ tasks.register('release') {
             rename { 'gs.exe' }
         }
 
-        // Copy configuration files from bin directory
-        println "Copying configuration files..."
-        copy {
-            from bundleSrcDest
-            into ghostscriptPrepPath
-            include 'bearsampp.conf'
-            include 'update_cidfmap.bat'
+        // Copy configuration files from bin directory if available
+        if (bundleSrcDest?.exists()) {
+            println "Copying configuration files..."
+            copy {
+                from bundleSrcDest
+                into ghostscriptPrepPath
+                include 'bearsampp.conf'
+                include 'update_cidfmap.bat'
+            }
+        } else {
+            println "No local config directory for ${bundleName}${bundleVersion}; skipping config file copy."
         }
+
+        println ""
+        println "Copying to bundles_build directory..."
+        // Mirror Bruno: provide a non-zip build directory for dev/testing
+        def ghostscriptBuildPath = file("${bundleTmpBuildPath}/${bundleName}${bundleVersion}")
+        if (ghostscriptBuildPath.exists()) {
+            delete ghostscriptBuildPath
+        }
+        ghostscriptBuildPath.mkdirs()
+
+        copy {
+            from ghostscriptPrepPath
+            into ghostscriptBuildPath
+        }
+        println "Non-zip version available at: ${ghostscriptBuildPath}"
 
         println ""
         println "Preparing archive..."
@@ -953,6 +991,21 @@ tasks.register('releaseAll') {
                     include 'bearsampp.conf'
                     include 'update_cidfmap.bat'
                 }
+
+                // Copy to bundles_build directory (non-zip version for development/testing)
+                println ""
+                println "Copying to bundles_build directory..."
+                def ghostscriptBuildPath = file("${bundleTmpBuildPath}/${bundleName}${bundleVersion}")
+                if (ghostscriptBuildPath.exists()) {
+                    delete ghostscriptBuildPath
+                }
+                ghostscriptBuildPath.mkdirs()
+
+                copy {
+                    from ghostscriptPrepPath
+                    into ghostscriptBuildPath
+                }
+                println "Non-zip version available at: ${ghostscriptBuildPath}"
 
                 // Build archive
                 def buildPath = file(buildBasePath)
