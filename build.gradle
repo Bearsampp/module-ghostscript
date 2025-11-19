@@ -1,0 +1,1400 @@
+/*
+ * Bearsampp Module Ghostscript - Gradle Build
+ *
+ * This is a 100% Gradle build configuration for the Ghostscript module.
+ * It handles downloading, extracting, and packaging Ghostscript releases.
+ *
+ * Usage:
+ *   gradle tasks                              - List all available tasks
+ *   gradle release -PbundleVersion=10.05.1    - Build release for specific version
+ *   gradle releaseAll                         - Build all versions
+ *   gradle clean                              - Clean build artifacts
+ *   gradle info                               - Display build information
+ *   gradle verify                             - Verify build environment
+ *   gradle listVersions                       - List available versions
+ *   gradle listReleases                       - List releases from properties
+ */
+
+plugins {
+    id 'base'
+}
+
+// ============================================================================
+// PROJECT CONFIGURATION
+// ============================================================================
+
+// Load build properties
+def buildProps = new Properties()
+file('build.properties').withInputStream { buildProps.load(it) }
+
+// Project information
+group = 'com.bearsampp.modules'
+version = buildProps.getProperty('bundle.release', '1.0.0')
+description = "Bearsampp Module - ${buildProps.getProperty('bundle.name', 'ghostscript')}"
+
+// Define project paths
+ext {
+    projectBasedir = projectDir.absolutePath
+    rootDir = projectDir.parent
+    devPath = file("${rootDir}/dev").absolutePath
+
+    // Bundle properties from build.properties
+    bundleName = buildProps.getProperty('bundle.name', 'ghostscript')
+    bundleRelease = buildProps.getProperty('bundle.release', '1.0.0')
+    bundleType = buildProps.getProperty('bundle.type', 'tools')
+    bundleFormat = buildProps.getProperty('bundle.format', '7z')
+
+    // Build paths - with configurable base path
+    // Priority: 1) build.properties, 2) Environment variable, 3) Default
+    def buildPathFromProps = buildProps.getProperty('build.path', '').trim()
+    def buildPathFromEnv = System.getenv('BEARSAMPP_BUILD_PATH') ?: ''
+    def defaultBuildPath = "${rootDir}/bearsampp-build"
+
+    buildBasePath = buildPathFromProps ?: (buildPathFromEnv ?: defaultBuildPath)
+
+    // Use shared bearsampp-build/tmp directory structure (same as Ant builds)
+    buildTmpPath = file("${buildBasePath}/tmp").absolutePath
+    bundleTmpBuildPath = file("${buildTmpPath}/bundles_build/${bundleType}/${bundleName}").absolutePath
+    bundleTmpPrepPath = file("${buildTmpPath}/bundles_prep/${bundleType}/${bundleName}").absolutePath
+    bundleTmpSrcPath = file("${buildTmpPath}/bundles_src").absolutePath
+
+    // Download and extract paths - use bearsampp-build/tmp instead of local build/
+    bundleTmpDownloadPath = file("${buildTmpPath}/downloads/${bundleName}").absolutePath
+    bundleTmpExtractPath = file("${buildTmpPath}/extract/${bundleName}").absolutePath
+}
+
+// Verify dev path exists
+if (!file(ext.devPath).exists()) {
+    throw new GradleException("Dev path not found: ${ext.devPath}. Please ensure the 'dev' project exists in ${ext.rootDir}")
+}
+
+// Configure repositories
+repositories {
+    mavenCentral()
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// Function to fetch modules-untouched properties file
+def fetchModulesUntouchedProperties() {
+    def propertiesUrl = "https://raw.githubusercontent.com/Bearsampp/modules-untouched/main/modules/${bundleName}.properties"
+
+    try {
+        def tempPropsFile = file("${buildTmpPath}/tmp-${bundleName}.properties")
+        tempPropsFile.parentFile.mkdirs()
+
+        ant.get(src: propertiesUrl, dest: tempPropsFile, verbose: false, ignoreerrors: true)
+
+        if (tempPropsFile.exists() && tempPropsFile.length() > 0) {
+            def props = new Properties()
+            tempPropsFile.withInputStream { props.load(it) }
+            tempPropsFile.delete()
+            return props
+        }
+    } catch (Exception e) {
+        // Silently fail
+    }
+
+    return null
+}
+
+// Function to get untouched module from modules-untouched repo (like Ant's getmoduleuntouched)
+def getModuleUntouched(String name, String version) {
+    // First, check if modules-untouched repo exists locally
+    def modulesUntouchedPath = file("${rootDir}/modules-untouched")
+
+    if (modulesUntouchedPath.exists()) {
+        // Look for the module in modules-untouched repo
+        def untouchedModulePath = file("${modulesUntouchedPath}/${name}/${name}${version}")
+
+        if (untouchedModulePath.exists()) {
+            def ghostscriptExe64 = file("${untouchedModulePath}/bin/gswin64c.exe")
+            def ghostscriptExe32 = file("${untouchedModulePath}/bin/gswin32c.exe")
+            if (ghostscriptExe64.exists() || ghostscriptExe32.exists()) {
+                println "Found untouched module in local repository: ${untouchedModulePath}"
+                return untouchedModulePath
+            }
+        }
+    }
+
+    // Second, try to download from modules-untouched remote properties file
+    println "Module not found in local modules-untouched, checking remote properties..."
+    def remoteUrl = getModuleUntouchedRemoteUrl(name, version)
+    if (remoteUrl) {
+        println "Found module in remote modules-untouched properties"
+        return downloadAndExtractFromUrl(remoteUrl, version, name)
+    }
+
+    return null
+}
+
+// Function to get download URL from modules-untouched remote properties file
+def getModuleUntouchedRemoteUrl(String name, String version) {
+    def propertiesUrl = "https://raw.githubusercontent.com/Bearsampp/modules-untouched/main/modules/${name}.properties"
+
+    try {
+        println "  Checking: ${propertiesUrl}"
+
+        // Download the properties file (store alongside other downloads like Bruno)
+        def tempPropsFile = file("${bundleTmpDownloadPath}/${name}-untouched.properties")
+        tempPropsFile.parentFile.mkdirs()
+
+        ant.get(src: propertiesUrl, dest: tempPropsFile, verbose: false, ignoreerrors: true)
+
+        if (tempPropsFile.exists() && tempPropsFile.length() > 0) {
+            def props = new Properties()
+            tempPropsFile.withInputStream { props.load(it) }
+
+            def url = props.getProperty(version)
+            tempPropsFile.delete()
+
+            if (url) {
+                println "  Found version ${version} in remote properties"
+                return url
+            } else {
+                println "  Version ${version} not found in remote properties"
+            }
+        } else {
+            println "  Remote properties file not found or empty"
+        }
+    } catch (Exception e) {
+        println "  Could not access remote properties: ${e.message}"
+    }
+
+    return null
+}
+
+// Function to download and extract from a URL
+def downloadAndExtractFromUrl(String downloadUrl, String version, String name) {
+    println "  Downloading from: ${downloadUrl}"
+
+    // Determine filename from URL
+    def filename = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1)
+    def downloadDir = file(bundleTmpDownloadPath)
+    def extractDir = file(bundleTmpExtractPath)
+    downloadDir.mkdirs()
+    extractDir.mkdirs()
+
+    def downloadedFile = file("${downloadDir}/${filename}")
+
+    // Download if not already present
+    if (!downloadedFile.exists()) {
+        println "  Downloading to: ${downloadedFile}"
+        ant.get(src: downloadUrl, dest: downloadedFile, verbose: true)
+        println "  Download complete"
+    } else {
+        println "  Using cached file: ${downloadedFile}"
+    }
+
+    // Extract the archive
+    println "  Extracting archive..."
+    def extractPath = file("${extractDir}/${version}")
+    if (extractPath.exists()) {
+        delete extractPath
+    }
+    extractPath.mkdirs()
+
+    // Use 7zip or built-in extraction
+    if (filename.endsWith('.7z')) {
+        def sevenZipPath = find7ZipExecutable()
+        if (sevenZipPath) {
+            def command = [
+                sevenZipPath.toString(),
+                'x',
+                downloadedFile.absolutePath.toString(),
+                "-o${extractPath.absolutePath}".toString(),
+                '-y'
+            ]
+            def process = new ProcessBuilder(command as String[])
+                .directory(extractPath)
+                .redirectErrorStream(true)
+                .start()
+
+            process.inputStream.eachLine { line ->
+                if (line.trim()) println "    ${line}"
+            }
+
+            def exitCode = process.waitFor()
+            if (exitCode != 0) {
+                throw new GradleException("7zip extraction failed with exit code: ${exitCode}")
+            }
+        } else {
+            throw new GradleException("7zip not found. Please install 7zip or extract manually.")
+        }
+    } else if (filename.endsWith('.zip')) {
+        copy {
+            from zipTree(downloadedFile)
+            into extractPath
+        }
+    } else {
+        throw new GradleException("Unsupported archive format: ${filename}")
+    }
+
+    println "  Extraction complete"
+
+    // Find the module directory in the extracted files
+    def moduleDir = findGhostscriptDirectory(extractPath)
+    if (!moduleDir) {
+        throw new GradleException("Could not find ${name} directory in extracted files")
+    }
+
+    println "  Found ${name} directory: ${moduleDir.name}"
+    return moduleDir
+}
+
+// Function to download and extract Ghostscript binaries
+def downloadAndExtractGhostscript(String version, File destDir) {
+    // First, try to get from modules-untouched repository (like Ant build)
+    def untouchedModule = getModuleUntouched(bundleName, version)
+    if (untouchedModule) {
+        println "Found untouched module in: ${untouchedModule}"
+        println "Using untouched module from modules-untouched repository"
+        return untouchedModule
+    }
+
+    // Second, try to download from releases.properties
+    println "Module not found in modules-untouched, downloading from releases.properties..."
+    println ""
+
+    def releasesFile = file('releases.properties')
+    if (!releasesFile.exists()) {
+        throw new GradleException("releases.properties not found")
+    }
+
+    def releases = new Properties()
+    releasesFile.withInputStream { releases.load(it) }
+
+    def downloadUrl = releases.getProperty(version)
+    if (!downloadUrl) {
+        throw new GradleException("Version ${version} not found in releases.properties or modules-untouched repository")
+    }
+
+    println "Downloading Ghostscript ${version} from:"
+    println "  ${downloadUrl}"
+
+    // Determine filename from URL
+    def filename = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1)
+    def downloadDir = file(bundleTmpDownloadPath)
+    def extractDir = file(bundleTmpExtractPath)
+    downloadDir.mkdirs()
+    extractDir.mkdirs()
+
+    def downloadedFile = file("${downloadDir}/${filename}")
+
+    // Download if not already present
+    if (!downloadedFile.exists()) {
+        println "  Downloading to: ${downloadedFile}"
+        ant.get(src: downloadUrl, dest: downloadedFile, verbose: true)
+        println "  Download complete"
+    } else {
+        println "  Using cached file: ${downloadedFile}"
+    }
+
+    // Extract the archive
+    println "  Extracting archive..."
+    def extractPath = file("${extractDir}/${version}")
+    if (extractPath.exists()) {
+        delete extractPath
+    }
+    extractPath.mkdirs()
+
+    // Use 7zip or built-in extraction
+    if (filename.endsWith('.7z')) {
+        // Try to use 7zip if available
+        def sevenZipPath = find7ZipExecutable()
+        if (sevenZipPath) {
+            def command = [
+                sevenZipPath.toString(),
+                'x',
+                downloadedFile.absolutePath.toString(),
+                "-o${extractPath.absolutePath}".toString(),
+                '-y'
+            ]
+            def process = new ProcessBuilder(command as String[])
+                .directory(extractPath)
+                .redirectErrorStream(true)
+                .start()
+
+            process.inputStream.eachLine { line ->
+                if (line.trim()) println "    ${line}"
+            }
+
+            def exitCode = process.waitFor()
+            if (exitCode != 0) {
+                throw new GradleException("7zip extraction failed with exit code: ${exitCode}")
+            }
+        } else {
+            throw new GradleException("7zip not found. Please install 7zip or extract manually.")
+        }
+    } else if (filename.endsWith('.zip')) {
+        copy {
+            from zipTree(downloadedFile)
+            into extractPath
+        }
+    } else {
+        throw new GradleException("Unsupported archive format: ${filename}")
+    }
+
+    println "  Extraction complete"
+
+    // Find the Ghostscript directory in the extracted files
+    def ghostscriptDir = findGhostscriptDirectory(extractPath)
+    if (!ghostscriptDir) {
+        throw new GradleException("Could not find Ghostscript directory in extracted files")
+    }
+
+    println "  Found Ghostscript directory: ${ghostscriptDir.name}"
+    return ghostscriptDir
+}
+
+// Function to find Ghostscript directory in extracted files
+def findGhostscriptDirectory(File extractPath) {
+    // Check for both 64-bit and 32-bit executables
+    def exeNames = ['gswin64c.exe', 'gswin32c.exe']
+
+    // First check if extractPath itself contains the executable (direct extraction)
+    for (exeName in exeNames) {
+        if (file("${extractPath}/bin/${exeName}").exists()) {
+            return extractPath
+        }
+    }
+
+    // Look for directory containing the executable at top level
+    def ghostscriptDirs = extractPath.listFiles()?.findAll { dir ->
+        if (!dir.isDirectory()) return false
+        for (exeName in exeNames) {
+            if (file("${dir}/bin/${exeName}").exists()) {
+                return true
+            }
+        }
+        return false
+    }
+
+    if (ghostscriptDirs && !ghostscriptDirs.isEmpty()) {
+        return ghostscriptDirs[0]
+    }
+
+    // If not found at top level, search one level deep
+    def foundDir = null
+    extractPath.listFiles()?.each { dir ->
+        if (dir.isDirectory() && !foundDir) {
+            def subDirs = dir.listFiles()?.findAll { subDir ->
+                if (!subDir.isDirectory()) return false
+                for (exeName in exeNames) {
+                    if (file("${subDir}/bin/${exeName}").exists()) {
+                        return true
+                    }
+                }
+                return false
+            }
+            if (subDirs && !subDirs.isEmpty()) {
+                foundDir = subDirs[0]
+            }
+        }
+    }
+
+    return foundDir
+}
+
+// ============================================================================
+// GRADLE TASKS
+// ============================================================================
+
+// Task: Display build information
+tasks.register('info') {
+    group = 'help'
+    description = 'Display build configuration information'
+
+    // Capture values at configuration time to avoid deprecation warnings
+    def projectName = project.name
+    def projectVersion = project.version
+    def projectDescription = project.description
+    def projectBasedirValue = projectBasedir
+    def rootDirValue = rootDir
+    def devPathValue = devPath
+    def bundleNameValue = bundleName
+    def bundleReleaseValue = bundleRelease
+    def bundleTypeValue = bundleType
+    def bundleFormatValue = bundleFormat
+    def buildBasePathValue = buildBasePath
+    def buildTmpPathValue = buildTmpPath
+    def bundleTmpPrepPathValue = bundleTmpPrepPath
+    def bundleTmpBuildPathValue = bundleTmpBuildPath
+    def bundleTmpSrcPathValue = bundleTmpSrcPath
+    def bundleTmpDownloadPathValue = bundleTmpDownloadPath
+    def bundleTmpExtractPathValue = bundleTmpExtractPath
+    def javaVersion = JavaVersion.current()
+    def javaHome = System.getProperty('java.home')
+    def gradleVersion = gradle.gradleVersion
+    def gradleHome = gradle.gradleHomeDir
+
+    doLast {
+        println """
+        ================================================================
+                  Bearsampp Module Ghostscript - Build Info
+        ================================================================
+
+        Project:        ${projectName}
+        Version:        ${projectVersion}
+        Description:    ${projectDescription}
+
+        Bundle Properties:
+          Name:         ${bundleNameValue}
+          Release:      ${bundleReleaseValue}
+          Type:         ${bundleTypeValue}
+          Format:       ${bundleFormatValue}
+
+        Paths:
+          Project Dir:  ${projectBasedirValue}
+          Root Dir:     ${rootDirValue}
+          Dev Path:     ${devPathValue}
+          Build Base:   ${buildBasePathValue}
+          Build Tmp:    ${buildTmpPathValue}
+          Tmp Prep:     ${bundleTmpPrepPathValue}
+          Tmp Build:    ${bundleTmpBuildPathValue}
+          Tmp Src:      ${bundleTmpSrcPathValue}
+          Tmp Download: ${bundleTmpDownloadPathValue}
+          Tmp Extract:  ${bundleTmpExtractPathValue}
+
+        Java:
+          Version:      ${javaVersion}
+          Home:         ${javaHome}
+
+        Gradle:
+          Version:      ${gradleVersion}
+          Home:         ${gradleHome}
+
+        Available Task Groups:
+          * build        - Build and package tasks
+          * help         - Help and information tasks
+          * verification - Verification tasks
+
+        Quick Start:
+          gradle tasks                              - List all available tasks
+          gradle info                               - Show this information
+          gradle release -PbundleVersion=10.05.1    - Build specific version
+          gradle releaseAll                         - Build all versions
+          gradle clean                              - Clean build artifacts
+          gradle verify                             - Verify build environment
+        """.stripIndent()
+    }
+}
+
+// Task: Main release task - build a specific version
+tasks.register('release') {
+    group = 'build'
+    description = 'Build release package for a specific version (use -PbundleVersion=X.X.X or run interactively)'
+
+    // Capture property at configuration time to avoid deprecation warning
+    def versionProperty = project.findProperty('bundleVersion')
+
+    doLast {
+        def versionToBuild = versionProperty
+
+        if (!versionToBuild) {
+            // Interactive mode - prompt for version
+            def availableVersions = getAvailableVersions()
+
+            if (availableVersions.isEmpty()) {
+                throw new GradleException("No versions found in bin/ or bin/archived/ directory")
+            }
+
+            println ""
+            println "=".multiply(70)
+            println "Interactive Release Mode"
+            println "=".multiply(70)
+            println ""
+            println "Available versions:"
+
+            // Show versions with location tags
+            def binDir = file("${projectDir}/bin")
+            def archivedDir = file("${projectDir}/bin/archived")
+
+            availableVersions.eachWithIndex { version, index ->
+                def location = ""
+                if (binDir.exists() && file("${binDir}/${bundleName}${version}").exists()) {
+                    location = "[bin]"
+                } else if (archivedDir.exists() && file("${archivedDir}/${bundleName}${version}").exists()) {
+                    location = "[bin/archived]"
+                }
+                println "  ${(index + 1).toString().padLeft(2)}. ${version.padRight(15)} ${location}"
+            }
+            println ""
+            println "Enter version to build (index or exact version):"
+            println ""
+
+            // Read input using Gradle's standard input
+            def input = null
+            try {
+                def reader = new BufferedReader(new InputStreamReader(System.in))
+                input = reader.readLine()
+            } catch (Exception e) {
+                throw new GradleException("""
+                    Failed to read input. Please use non-interactive mode:
+                      gradle release -PbundleVersion=X.X.X
+
+                    Available versions: ${availableVersions.join(', ')}
+                """.stripIndent())
+            }
+
+            if (!input || input.trim().isEmpty()) {
+                throw new GradleException("""
+                    No version selected. Please use non-interactive mode:
+                      gradle release -PbundleVersion=X.X.X
+
+                    Available versions: ${availableVersions.join(', ')}
+                """.stripIndent())
+            }
+
+            versionToBuild = input.trim()
+
+            // Support selecting by list index (e.g., "9") or exact version string
+            def indexMatch = (versionToBuild ==~ /\d+/)
+            if (indexMatch) {
+                def idx = Integer.parseInt(versionToBuild)
+                if (idx >= 1 && idx <= availableVersions.size()) {
+                    versionToBuild = availableVersions[idx - 1]
+                } else {
+                    throw new GradleException("""
+                        Invalid selection: ${input}
+
+                        Please enter a number between 1 and ${availableVersions.size()} or one of the exact versions below:
+                        ${availableVersions.collect { "  - ${it}" }.join('\n')}
+                    """.stripIndent())
+                }
+            } else {
+                // Validate the entered version string
+                if (!availableVersions.contains(versionToBuild)) {
+                    throw new GradleException("""
+                        Invalid version: ${versionToBuild}
+
+                        Please choose from available versions:
+                        ${availableVersions.collect { "  - ${it}" }.join('\n')}
+                    """.stripIndent())
+                }
+            }
+
+            println ""
+            println "Selected version: ${versionToBuild}"
+        }
+
+        println ""
+        println "=".multiply(70)
+        println "Building ${bundleName} ${versionToBuild}"
+        println "=".multiply(70)
+        println ""
+
+        // Try to use local bin first; if missing, we'll download (modules-untouched fallback)
+        def bundlePath = file("${projectDir}/bin/${bundleName}${versionToBuild}")
+        if (!bundlePath.exists()) {
+            def archivedCandidate = file("${projectDir}/bin/archived/${bundleName}${versionToBuild}")
+            if (archivedCandidate.exists()) {
+                bundlePath = archivedCandidate
+            } else {
+                println "No local bundle found in bin/ or bin/archived/. Will download sources."
+            }
+        }
+
+        if (bundlePath?.exists()) {
+            println "Bundle path: ${bundlePath}"
+        }
+        println ""
+
+        // Determine bundleVersion
+        def bundleVersion = bundlePath?.exists() ? bundlePath.name.replace(bundleName, '') : versionToBuild
+
+        // Determine source paths
+        def bundleSrcDest = bundlePath
+        def bundleSrcFinal = bundleSrcDest
+
+        // Check if Ghostscript executable exists (64-bit or 32-bit) when we have a local bundle
+        def ghostscriptExe64 = bundleSrcFinal ? file("${bundleSrcFinal}/bin/gswin64c.exe") : file('NUL')
+        def ghostscriptExe32 = bundleSrcFinal ? file("${bundleSrcFinal}/bin/gswin32c.exe") : file('NUL')
+        def hasGhostscript = bundleSrcFinal && (ghostscriptExe64.exists() || ghostscriptExe32.exists())
+
+        if (!hasGhostscript) {
+            // Ghostscript binaries not found in bin/ - check if already downloaded to bearsampp-build/tmp
+            def tmpExtractPath = file("${bundleTmpExtractPath}/${bundleVersion}")
+            def tmpGhostscriptDir = findGhostscriptDirectory(tmpExtractPath)
+
+            if (tmpGhostscriptDir && tmpGhostscriptDir.exists()) {
+                println "Using cached Ghostscript binaries from bearsampp-build/tmp"
+                bundleSrcFinal = tmpGhostscriptDir
+            } else {
+                // Download and extract to bearsampp-build/tmp
+                println ""
+                println "Ghostscript binaries not found"
+                println "Downloading Ghostscript ${bundleVersion}..."
+                println ""
+
+                try {
+                    // Download and extract to bearsampp-build/tmp
+                    bundleSrcFinal = downloadAndExtractGhostscript(bundleVersion, file(bundleTmpExtractPath))
+                } catch (Exception e) {
+                    throw new GradleException("""
+                        Failed to download Ghostscript binaries: ${e.message}
+
+                        You can manually download and extract Ghostscript binaries to:
+                          ${bundleSrcDest}/
+
+                        Or check that version ${bundleVersion} exists in releases.properties
+                    """.stripIndent())
+                }
+            }
+        }
+
+        // Verify Ghostscript executable exists (64-bit or 32-bit)
+        ghostscriptExe64 = file("${bundleSrcFinal}/bin/gswin64c.exe")
+        ghostscriptExe32 = file("${bundleSrcFinal}/bin/gswin32c.exe")
+        def ghostscriptExe = ghostscriptExe64.exists() ? ghostscriptExe64 : ghostscriptExe32
+
+        if (!ghostscriptExe.exists()) {
+            throw new GradleException("Ghostscript executable (gswin64c.exe or gswin32c.exe) not found in ${bundleSrcFinal}/bin/")
+        }
+
+        println "Source folder: ${bundleSrcFinal}"
+        println ""
+
+        // Prepare output directory
+        def ghostscriptPrepPath = file("${bundleTmpPrepPath}/${bundleName}${bundleVersion}")
+        if (ghostscriptPrepPath.exists()) {
+            delete ghostscriptPrepPath
+        }
+        ghostscriptPrepPath.mkdirs()
+
+        // Copy Ghostscript binaries from extracted/downloaded location (excluding docs and examples)
+        println "Copying Ghostscript files..."
+        copy {
+            from bundleSrcFinal
+            into ghostscriptPrepPath
+            exclude 'doc/**'
+            exclude 'examples/**'
+            exclude 'uninstgs.exe.nsis'
+            exclude 'vcredist_x64.exe'
+        }
+
+        // Copy gswin64c.exe or gswin32c.exe to gs.exe
+        def sourceExe = file("${ghostscriptPrepPath}/bin/gswin64c.exe").exists() ?
+                        file("${ghostscriptPrepPath}/bin/gswin64c.exe") :
+                        file("${ghostscriptPrepPath}/bin/gswin32c.exe")
+        println "Creating gs.exe from ${sourceExe.name}..."
+        copy {
+            from sourceExe
+            into file("${ghostscriptPrepPath}/bin")
+            rename { 'gs.exe' }
+        }
+
+        // Copy configuration files from bin directory if available
+        if (bundleSrcDest?.exists()) {
+            println "Copying configuration files..."
+            copy {
+                from bundleSrcDest
+                into ghostscriptPrepPath
+                include 'bearsampp.conf'
+                include 'update_cidfmap.bat'
+            }
+        } else {
+            println "No local config directory for ${bundleName}${bundleVersion}; skipping config file copy."
+        }
+
+        println ""
+        println "Copying to bundles_build directory..."
+        // Mirror Bruno: provide a non-zip build directory for dev/testing
+        def ghostscriptBuildPath = file("${bundleTmpBuildPath}/${bundleName}${bundleVersion}")
+        if (ghostscriptBuildPath.exists()) {
+            delete ghostscriptBuildPath
+        }
+        ghostscriptBuildPath.mkdirs()
+
+        copy {
+            from ghostscriptPrepPath
+            into ghostscriptBuildPath
+        }
+        println "Non-zip version available at: ${ghostscriptBuildPath}"
+
+        println ""
+        println "Preparing archive..."
+
+        // Determine build output path following Apache pattern
+        // bearsampp-build/tools/ghostscript/{bundleRelease} for tools
+        // bearsampp-build/bins/apache/{bundleRelease} for bins
+        def buildPath = file(buildBasePath)
+        def buildBinsPath = file("${buildPath}/${bundleType}/${bundleName}/${bundleRelease}")
+        buildBinsPath.mkdirs()
+
+        // Build archive filename
+        def destFile = file("${buildBinsPath}/bearsampp-${bundleName}-${bundleVersion}-${bundleRelease}")
+
+        // Compress based on format
+        if (bundleFormat == '7z') {
+            // 7z format
+            def archiveFile = file("${destFile}.7z")
+            if (archiveFile.exists()) {
+                delete archiveFile
+            }
+
+            println "Compressing ${bundleName}${bundleVersion} to ${archiveFile.name}..."
+
+            // Find 7z executable
+            def sevenZipExe = find7ZipExecutable()
+            if (!sevenZipExe) {
+                throw new GradleException("7-Zip not found. Please install 7-Zip or set 7Z_HOME environment variable.")
+            }
+
+            println "Using 7-Zip: ${sevenZipExe}"
+
+            // Create 7z archive, ensuring the version directory is included at the root
+            def command = [
+                sevenZipExe,
+                'a',
+                '-t7z',
+                archiveFile.absolutePath.toString(),
+                "${bundleName}${bundleVersion}"
+            ]
+
+            // Run from the parent prep directory so the root contains the version folder
+            def process = new ProcessBuilder(command as String[])
+                .directory(file(bundleTmpPrepPath))
+                .redirectErrorStream(true)
+                .start()
+
+            process.inputStream.eachLine { line ->
+                if (line.trim()) println "  ${line}"
+            }
+
+            def exitCode = process.waitFor()
+            if (exitCode != 0) {
+                throw new GradleException("7zip compression failed with exit code: ${exitCode}")
+            }
+
+            println "Archive created: ${archiveFile}"
+
+            // Generate hash files
+            println "Generating hash files..."
+            generateHashFiles(archiveFile)
+
+        } else {
+            // ZIP format
+            def archiveFile = file("${destFile}.zip")
+            if (archiveFile.exists()) {
+                delete archiveFile
+            }
+
+            println "Compressing ${bundleName}${bundleVersion} to ${archiveFile.name}..."
+
+            // Zip while preserving the version directory at the root
+            ant.zip(destfile: archiveFile) {
+                zipfileset(dir: bundleTmpPrepPath, includes: "${bundleName}${bundleVersion}/**")
+            }
+
+            println "Archive created: ${archiveFile}"
+
+            // Generate hash files
+            println "Generating hash files..."
+            generateHashFiles(archiveFile)
+        }
+
+        println ""
+        println "=".multiply(70)
+        println "[SUCCESS] Release build completed successfully for version ${versionToBuild}"
+        println "Output directory: ${ghostscriptBuildPath}"
+        println "Archive: ${destFile}.${bundleFormat}"
+        println "=".multiply(70)
+    }
+}
+
+// Helper function to find 7-Zip executable
+def find7ZipExecutable() {
+    // Check environment variable
+    def sevenZipHome = System.getenv('7Z_HOME')
+    if (sevenZipHome) {
+        def exe = file("${sevenZipHome}/7z.exe")
+        if (exe.exists()) {
+            return exe.absolutePath
+        }
+    }
+
+    // Check common installation paths
+    def commonPaths = [
+        'C:/Program Files/7-Zip/7z.exe',
+        'C:/Program Files (x86)/7-Zip/7z.exe',
+        'D:/Program Files/7-Zip/7z.exe',
+        'D:/Program Files (x86)/7-Zip/7z.exe'
+    ]
+
+    for (path in commonPaths) {
+        def exe = file(path)
+        if (exe.exists()) {
+            return exe.absolutePath
+        }
+    }
+
+    // Try to find in PATH
+    try {
+        def process = ['where', '7z.exe'].execute()
+        process.waitFor()
+        if (process.exitValue() == 0) {
+            def output = process.text.trim()
+            if (output) {
+                return output.split('\n')[0].trim()
+            }
+        }
+    } catch (Exception e) {
+        // Ignore
+    }
+
+    return null
+}
+
+// Helper function to generate hash files
+def generateHashFiles(File file) {
+    if (!file.exists()) {
+        throw new GradleException("File not found for hashing: ${file}")
+    }
+
+    // Generate MD5
+    def md5File = new File("${file.absolutePath}.md5")
+    def md5Hash = calculateHash(file, 'MD5')
+    md5File.text = "${md5Hash} ${file.name}\n"
+    println "  Created: ${md5File.name}"
+
+    // Generate SHA1
+    def sha1File = new File("${file.absolutePath}.sha1")
+    def sha1Hash = calculateHash(file, 'SHA-1')
+    sha1File.text = "${sha1Hash} ${file.name}\n"
+    println "  Created: ${sha1File.name}"
+
+    // Generate SHA256
+    def sha256File = new File("${file.absolutePath}.sha256")
+    def sha256Hash = calculateHash(file, 'SHA-256')
+    sha256File.text = "${sha256Hash} ${file.name}\n"
+    println "  Created: ${sha256File.name}"
+
+    // Generate SHA512
+    def sha512File = new File("${file.absolutePath}.sha512")
+    def sha512Hash = calculateHash(file, 'SHA-512')
+    sha512File.text = "${sha512Hash} ${file.name}\n"
+    println "  Created: ${sha512File.name}"
+}
+
+// Helper function to calculate hash
+def calculateHash(File file, String algorithm) {
+    def digest = java.security.MessageDigest.getInstance(algorithm)
+    file.withInputStream { stream ->
+        def buffer = new byte[8192]
+        def bytesRead
+        while ((bytesRead = stream.read(buffer)) != -1) {
+            digest.update(buffer, 0, bytesRead)
+        }
+    }
+    return digest.digest().collect { String.format('%02x', it) }.join('')
+}
+
+// Helper function to get available versions
+def getAvailableVersions() {
+    def versions = []
+
+    // Check bin directory
+    def binDir = file("${projectDir}/bin")
+    if (binDir.exists()) {
+        def binVersions = binDir.listFiles()
+            ?.findAll { it.isDirectory() && it.name.startsWith(bundleName) && it.name != 'archived' }
+            ?.collect { it.name.replace(bundleName, '') } ?: []
+        versions.addAll(binVersions)
+    }
+
+    // Check bin/archived subdirectory
+    def archivedDir = file("${projectDir}/bin/archived")
+    if (archivedDir.exists()) {
+        def archivedVersions = archivedDir.listFiles()
+            ?.findAll { it.isDirectory() && it.name.startsWith(bundleName) }
+            ?.collect { it.name.replace(bundleName, '') } ?: []
+        versions.addAll(archivedVersions)
+    }
+
+    // Remove duplicates and sort
+    return versions.unique().sort()
+}
+
+// Task: Build all available versions
+tasks.register('releaseAll') {
+    group = 'build'
+    description = 'Build release packages for all available versions in bin/ and bin/archived/ directories'
+
+    doLast {
+        def versions = getAvailableVersions()
+
+        if (versions.isEmpty()) {
+            throw new GradleException("No versions found in bin/ or bin/archived/ directory")
+        }
+
+        println ""
+        println "=".multiply(70)
+        println "Building releases for ${versions.size()} ${bundleName} versions"
+        println "=".multiply(70)
+        println ""
+
+        def successCount = 0
+        def failedVersions = []
+
+        versions.each { version ->
+            println "=".multiply(70)
+            println "[${successCount + 1}/${versions.size()}] Building ${bundleName} ${version}..."
+            println "=".multiply(70)
+
+            try {
+                // Call the release task logic for this version
+                def bundlePath = file("${projectDir}/bin/${bundleName}${version}")
+                if (!bundlePath.exists()) {
+                    bundlePath = file("${projectDir}/bin/archived/${bundleName}${version}")
+                    if (!bundlePath.exists()) {
+                        throw new GradleException("Bundle path not found: ${bundlePath}")
+                    }
+                }
+
+                println "Bundle path: ${bundlePath}"
+                println ""
+
+                // Get the bundle folder and version
+                def bundleFolder = bundlePath.name
+                def bundleVersion = bundleFolder.replace(bundleName, '')
+
+                // Determine source paths
+                def bundleSrcDest = bundlePath
+                def bundleSrcFinal = bundleSrcDest
+
+                // Check if gswin64c.exe exists
+                def ghostscriptExe = file("${bundleSrcFinal}/bin/gswin64c.exe")
+                if (!ghostscriptExe.exists()) {
+                    // Try to download
+                    def tmpExtractPath = file("${bundleTmpExtractPath}/${bundleVersion}")
+                    def tmpGhostscriptDir = findGhostscriptDirectory(tmpExtractPath)
+
+                    if (tmpGhostscriptDir && tmpGhostscriptDir.exists()) {
+                        bundleSrcFinal = tmpGhostscriptDir
+                    } else {
+                        bundleSrcFinal = downloadAndExtractGhostscript(bundleVersion, file(bundleTmpExtractPath))
+                    }
+                }
+
+                ghostscriptExe = file("${bundleSrcFinal}/bin/gswin64c.exe")
+                if (!ghostscriptExe.exists()) {
+                    throw new GradleException("gswin64c.exe not found at ${ghostscriptExe}")
+                }
+
+                println "Source folder: ${bundleSrcFinal}"
+                println ""
+
+                // Prepare output directory
+                def ghostscriptPrepPath = file("${bundleTmpPrepPath}/${bundleName}${bundleVersion}")
+                if (ghostscriptPrepPath.exists()) {
+                    delete ghostscriptPrepPath
+                }
+                ghostscriptPrepPath.mkdirs()
+
+                // Copy Ghostscript files
+                println "Copying Ghostscript files..."
+                copy {
+                    from bundleSrcFinal
+                    into ghostscriptPrepPath
+                    exclude 'doc/**'
+                    exclude 'examples/**'
+                    exclude 'uninstgs.exe.nsis'
+                    exclude 'vcredist_x64.exe'
+                }
+
+                // Copy gswin64c.exe to gs.exe
+                copy {
+                    from file("${ghostscriptPrepPath}/bin/gswin64c.exe")
+                    into file("${ghostscriptPrepPath}/bin")
+                    rename { 'gs.exe' }
+                }
+
+                // Copy configuration files
+                copy {
+                    from bundleSrcDest
+                    into ghostscriptPrepPath
+                    include 'bearsampp.conf'
+                    include 'update_cidfmap.bat'
+                }
+
+                // Copy to bundles_build directory (non-zip version for development/testing)
+                println ""
+                println "Copying to bundles_build directory..."
+                def ghostscriptBuildPath = file("${bundleTmpBuildPath}/${bundleName}${bundleVersion}")
+                if (ghostscriptBuildPath.exists()) {
+                    delete ghostscriptBuildPath
+                }
+                ghostscriptBuildPath.mkdirs()
+
+                copy {
+                    from ghostscriptPrepPath
+                    into ghostscriptBuildPath
+                }
+                println "Non-zip version available at: ${ghostscriptBuildPath}"
+
+                // Build archive
+                def buildPath = file(buildBasePath)
+                def buildBinsPath = file("${buildPath}/${bundleType}/${bundleName}/${bundleRelease}")
+                buildBinsPath.mkdirs()
+
+                def destFile = file("${buildBinsPath}/bearsampp-${bundleName}-${bundleVersion}-${bundleRelease}")
+
+                if (bundleFormat == '7z') {
+                    def archiveFile = file("${destFile}.7z")
+                    if (archiveFile.exists()) {
+                        delete archiveFile
+                    }
+
+                    def sevenZipExe = find7ZipExecutable()
+                    if (!sevenZipExe) {
+                        throw new GradleException("7-Zip not found")
+                    }
+
+                    def command = [
+                        sevenZipExe,
+                        'a',
+                        '-t7z',
+                        archiveFile.absolutePath.toString(),
+                        '.'
+                    ]
+
+                    def process = new ProcessBuilder(command as String[])
+                        .directory(ghostscriptPrepPath)
+                        .redirectErrorStream(true)
+                        .start()
+
+                    process.inputStream.eachLine { line ->
+                        if (line.trim()) println "  ${line}"
+                    }
+
+                    def exitCode = process.waitFor()
+                    if (exitCode != 0) {
+                        throw new GradleException("7zip compression failed")
+                    }
+
+                    generateHashFiles(archiveFile)
+                } else {
+                    def archiveFile = file("${destFile}.zip")
+                    if (archiveFile.exists()) {
+                        delete archiveFile
+                    }
+
+                    ant.zip(destfile: archiveFile, basedir: ghostscriptPrepPath)
+                    generateHashFiles(archiveFile)
+                }
+
+                println ""
+                println "[SUCCESS] ${bundleName} ${version} completed"
+                println "Output: ${ghostscriptBuildPath}"
+                successCount++
+
+            } catch (Exception e) {
+                println ""
+                println "[FAILED] ${bundleName} ${version}: ${e.message}"
+                failedVersions.add(version)
+            }
+
+            println ""
+        }
+
+        // Summary
+        println "=".multiply(70)
+        println "Build Summary"
+        println "=".multiply(70)
+        println "Total versions: ${versions.size()}"
+        println "Successful:     ${successCount}"
+        println "Failed:         ${failedVersions.size()}"
+
+        if (!failedVersions.isEmpty()) {
+            println ""
+            println "Failed versions:"
+            failedVersions.each { v ->
+                println "  - ${v}"
+            }
+        }
+
+        println "=".multiply(70)
+
+        if (failedVersions.isEmpty()) {
+            println "[SUCCESS] All versions built successfully!"
+        } else {
+            throw new GradleException("${failedVersions.size()} version(s) failed to build")
+        }
+    }
+}
+
+// Task: Enhanced clean task
+tasks.named('clean') {
+    group = 'build'
+    description = 'Clean build artifacts and temporary files'
+
+    doLast {
+        // Clean Gradle build directory
+        def buildDir = file("${projectDir}/build")
+        if (buildDir.exists()) {
+            delete buildDir
+        }
+
+        println "[SUCCESS] Build artifacts cleaned"
+    }
+}
+
+// Task: Verify build environment
+tasks.register('verify') {
+    group = 'verification'
+    description = 'Verify build environment and dependencies'
+
+    doLast {
+        println "Verifying build environment for module-ghostscript..."
+
+        def checks = [:]
+
+        // Check Java version
+        def javaVersion = JavaVersion.current()
+        checks['Java 8+'] = javaVersion >= JavaVersion.VERSION_1_8
+
+        // Check required files
+        checks['build.properties'] = file('build.properties').exists()
+        checks['releases.properties'] = file('releases.properties').exists()
+
+        // Check dev directory
+        checks['dev directory'] = file(devPath).exists()
+
+        // Check bin directory
+        checks['bin directory'] = file("${projectDir}/bin").exists()
+
+        // Check bin/archived directory
+        checks['bin/archived directory'] = file("${projectDir}/bin/archived").exists()
+
+        // Check 7-Zip if format is 7z
+        if (bundleFormat == '7z') {
+            checks['7-Zip'] = find7ZipExecutable() != null
+        }
+
+        println "\nEnvironment Check Results:"
+        println "-".multiply(60)
+        checks.each { name, passed ->
+            def status = passed ? "[PASS]" : "[FAIL]"
+            println "  ${status.padRight(10)} ${name}"
+        }
+        println "-".multiply(60)
+
+        def allPassed = checks.values().every { it }
+        if (allPassed) {
+            println "\n[SUCCESS] All checks passed! Build environment is ready."
+            println "\nYou can now run:"
+            println "  gradle release -PbundleVersion=10.05.1   - Build release for version"
+            println "  gradle listVersions                      - List available versions"
+        } else {
+            println "\n[WARNING] Some checks failed. Please review the requirements."
+            throw new GradleException("Build environment verification failed")
+        }
+    }
+}
+
+// Task: List all bundle versions from modules-untouched ghostscript.properties
+tasks.register('listReleases') {
+    group = 'help'
+    description = 'List all available releases from modules-untouched ghostscript.properties'
+
+    doLast {
+        def props = fetchModulesUntouchedProperties()
+        if (!props) {
+            println "\n[WARNING] Could not fetch modules-untouched ghostscript.properties."
+            println "Checking local releases.properties..."
+
+            def releasesFile = file('releases.properties')
+            if (!releasesFile.exists()) {
+                println "releases.properties not found"
+                return
+            }
+
+            def releases = new Properties()
+            releasesFile.withInputStream { releases.load(it) }
+
+            println "\nAvailable Ghostscript Releases (local):"
+            println "-".multiply(80)
+            releases.sort { it.key }.each { version, url ->
+                println "  ${version.padRight(10)} -> ${url}"
+            }
+            println "-".multiply(80)
+            println "Total releases: ${releases.size()}"
+            return
+        }
+
+        println "\nAvailable Ghostscript Releases (modules-untouched):"
+        println "-".multiply(80)
+        props.sort { a, b -> a.key <=> b.key }.each { version, url ->
+            println "  ${version.padRight(10)} -> ${url}"
+        }
+        println "-".multiply(80)
+        println "Total releases: ${props.size()}"
+    }
+}
+
+// Task: List available bundle versions in bin and bin/archived directories
+tasks.register('listVersions') {
+    group = 'help'
+    description = 'List all available bundle versions in bin/ and bin/archived/ directories'
+
+    doLast {
+        def versions = getAvailableVersions()
+
+        if (versions.isEmpty()) {
+            println "\nNo versions found in bin/ or bin/archived/ directories"
+            return
+        }
+
+        println "\nAvailable ${bundleName} versions:"
+        println "-".multiply(60)
+
+        // Show which directory each version is in
+        def binDir = file("${projectDir}/bin")
+        def archivedDir = file("${projectDir}/bin/archived")
+
+        versions.each { version ->
+            def location = ""
+            if (binDir.exists() && file("${binDir}/${bundleName}${version}").exists()) {
+                location = "[bin]"
+            } else if (archivedDir.exists() && file("${archivedDir}/${bundleName}${version}").exists()) {
+                location = "[bin/archived]"
+            }
+            println "  ${version.padRight(15)} ${location}"
+        }
+        println "-".multiply(60)
+        println "Total versions: ${versions.size()}"
+
+        if (!versions.isEmpty()) {
+            println "\nTo build a specific version:"
+            println "  gradle release -PbundleVersion=${versions.last()}"
+        }
+    }
+}
+
+// Task: Validate build.properties
+tasks.register('validateProperties') {
+    group = 'verification'
+    description = 'Validate build.properties configuration'
+
+    doLast {
+        println "Validating build.properties..."
+
+        def required = ['bundle.name', 'bundle.release', 'bundle.type', 'bundle.format']
+        def missing = []
+
+        required.each { prop ->
+            if (!buildProps.containsKey(prop) || buildProps.getProperty(prop).trim().isEmpty()) {
+                missing.add(prop)
+            }
+        }
+
+        if (missing.isEmpty()) {
+            println "[SUCCESS] All required properties are present:"
+            required.each { prop ->
+                println "    ${prop} = ${buildProps.getProperty(prop)}"
+            }
+        } else {
+            println "[ERROR] Missing required properties:"
+            missing.each { prop ->
+                println "    - ${prop}"
+            }
+            throw new GradleException("build.properties validation failed")
+        }
+    }
+}
+
+// Task: Check modules-untouched integration
+tasks.register('checkModulesUntouched') {
+    group = 'verification'
+    description = 'Check modules-untouched repository integration and available versions'
+
+    doLast {
+        println ""
+        println "=".multiply(70)
+        println "Modules-Untouched Integration Check"
+        println "=".multiply(70)
+        println ""
+
+        def propsUrl = "https://raw.githubusercontent.com/Bearsampp/modules-untouched/main/modules/${bundleName}.properties"
+        println "Repository URL:"
+        println "  ${propsUrl}"
+        println ""
+
+        println "Fetching ${bundleName}.properties from modules-untouched..."
+        def untouchedProps = fetchModulesUntouchedProperties()
+
+        if (untouchedProps) {
+            println ""
+            println "=".multiply(70)
+            println "Available Versions in modules-untouched"
+            println "=".multiply(70)
+
+            def sortedVersions = untouchedProps.sort { a, b ->
+                // Simple version comparison
+                def aParts = a.key.tokenize('.')
+                def bParts = b.key.tokenize('.')
+                for (int i = 0; i < Math.min(aParts.size(), bParts.size()); i++) {
+                    def aNum = aParts[i].toInteger()
+                    def bNum = bParts[i].toInteger()
+                    if (aNum != bNum) return aNum <=> bNum
+                }
+                return aParts.size() <=> bParts.size()
+            }
+
+            sortedVersions.each { version, url ->
+                println "  ${version.padRight(10)}"
+            }
+
+            println "=".multiply(70)
+            println "Total versions: ${untouchedProps.size()}"
+            println ""
+
+            println ""
+            println "=".multiply(70)
+            println "[SUCCESS] modules-untouched integration is working"
+            println "=".multiply(70)
+            println ""
+            println "Version Resolution Strategy:"
+            println "  1. Check modules-untouched ${bundleName}.properties (remote)"
+            println "  2. Check local releases.properties (fallback)"
+            println "  3. Construct standard URL format (fallback)"
+            println ""
+
+        } else {
+            println ""
+            println "=".multiply(70)
+            println "[WARNING] Could not fetch ${bundleName}.properties from modules-untouched"
+            println "=".multiply(70)
+            println ""
+            println "This may be due to:"
+            println "  - Network connectivity issues"
+            println "  - Repository access problems"
+            println "  - File not available at expected location"
+            println ""
+            println "The build system will fall back to:"
+            println "  1. Local releases.properties"
+            println "  2. Standard URL format construction"
+        }
+    }
+}
+
+// ============================================================================
+// BUILD LIFECYCLE HOOKS
+// ============================================================================
+
+gradle.taskGraph.whenReady { graph ->
+    println """
+    ================================================================
+      Bearsampp Module Ghostscript - Gradle Build
+    ================================================================
+    """.stripIndent()
+}
+
+// ============================================================================
+// DEFAULT TASK
+// ============================================================================
+
+defaultTasks 'info'

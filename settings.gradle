@@ -1,0 +1,22 @@
+/*
+ * Bearsampp Module Ghostscript - Gradle Settings
+ */
+
+rootProject.name = 'module-ghostscript'
+
+// Configure build cache for faster builds
+buildCache {
+    local {
+        enabled = true
+        directory = file("${rootDir}/.gradle/build-cache")
+    }
+}
+
+// Display initialization message
+gradle.rootProject {
+    println """
+    ================================================================
+      Initializing Bearsampp Module Ghostscript Build
+    ================================================================
+    """.stripIndent()
+}
