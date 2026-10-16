@@ -3,23 +3,23 @@
   "owner": "Bearsampp",
   "repo": "module-ghostscript",
   "visibility": "public",
-  "generatedAt": "2026-10-15T04:00:19.895Z",
+  "generatedAt": "2026-10-16T03:57:05.473Z",
   "stats": {
     "total": 932,
-    "day": 6,
-    "week": 17,
+    "day": 0,
+    "week": 15,
     "month": 17
   },
   "partial": {
     "day": false,
-    "week": false,
+    "week": true,
     "month": true
   },
   "snapshots": {
     "windowDays": 180,
-    "count": 8,
+    "count": 9,
     "firstDate": "2026-10-07",
-    "lastDate": "2026-10-15",
+    "lastDate": "2026-10-16",
     "series": {
       "2026-10-07": 915,
       "2026-10-08": 915,
@@ -28,7 +28,8 @@
       "2026-10-12": 918,
       "2026-10-13": 919,
       "2026-10-14": 926,
-      "2026-10-15": 932
+      "2026-10-15": 932,
+      "2026-10-16": 932
     }
   },
   "profile": {
